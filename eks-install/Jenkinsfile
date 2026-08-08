@@ -6,7 +6,7 @@ pipeline {
         choice(
             name: 'ACTION',
             choices: ['APPLY', 'DESTROY'],
-            description: 'Choose whether to apply or destroy the Terraform infrastructure'
+            description: 'Select Terraform operation'
         )
     }
 
@@ -17,66 +17,50 @@ pipeline {
 
     stages {
 
-        // --------------------------------------------------
-        // 1. Checkout Terraform Code
-        // --------------------------------------------------
-        stage('Checkout') {
-            steps {
-                checkout scm
-            }
-        }
-
-        // --------------------------------------------------
-        // 2. Terraform Format Check
-        // --------------------------------------------------
         stage('Terraform Format Check') {
             steps {
-                sh '''
-                    echo "Checking Terraform formatting..."
-                    terraform fmt -check -recursive
-                '''
+                dir('eks-install') {
+                    sh '''
+                        echo "=== Terraform Format Check ==="
+                        terraform fmt -check -recursive
+                    '''
+                }
             }
         }
 
-        // --------------------------------------------------
-        // 3. Checkov Security Scan
-        // --------------------------------------------------
         stage('Checkov Security Scan') {
             steps {
-                sh '''
-                    echo "Running Checkov security scan..."
-                    ${CHECKOV} -d . --framework terraform
-                '''
+                dir('eks-install') {
+                    sh '''
+                        echo "=== Checkov Security Scan ==="
+                        ${CHECKOV} -d . --framework terraform
+                    '''
+                }
             }
         }
 
-        // --------------------------------------------------
-        // 4. Terraform Init
-        // --------------------------------------------------
         stage('Terraform Init') {
             steps {
-                sh '''
-                    echo "Initializing Terraform..."
-                    terraform init
-                '''
+                dir('eks-install') {
+                    sh '''
+                        echo "=== Terraform Init ==="
+                        terraform init
+                    '''
+                }
             }
         }
 
-        // --------------------------------------------------
-        // 5. Terraform Validate
-        // --------------------------------------------------
         stage('Terraform Validate') {
             steps {
-                sh '''
-                    echo "Validating Terraform configuration..."
-                    terraform validate
-                '''
+                dir('eks-install') {
+                    sh '''
+                        echo "=== Terraform Validate ==="
+                        terraform validate
+                    '''
+                }
             }
         }
 
-        // --------------------------------------------------
-        // 6. Terraform Plan
-        // --------------------------------------------------
         stage('Terraform Plan') {
             when {
                 expression {
@@ -85,17 +69,16 @@ pipeline {
             }
 
             steps {
-                sh '''
-                    echo "Creating Terraform plan..."
-                    terraform plan -out=tfplan
-                '''
+                dir('eks-install') {
+                    sh '''
+                        echo "=== Terraform Plan ==="
+                        terraform plan -out=tfplan
+                    '''
+                }
             }
         }
 
-        // --------------------------------------------------
-        // 7. Approval Before Apply
-        // --------------------------------------------------
-        stage('Approve Terraform Apply') {
+        stage('Approve Apply') {
             when {
                 expression {
                     params.ACTION == 'APPLY'
@@ -104,15 +87,12 @@ pipeline {
 
             steps {
                 input(
-                    message: 'Terraform plan is ready. Do you want to APPLY the changes?',
+                    message: 'Terraform plan completed. Do you approve APPLY?',
                     ok: 'Approve Apply'
                 )
             }
         }
 
-        // --------------------------------------------------
-        // 8. Terraform Apply
-        // --------------------------------------------------
         stage('Terraform Apply') {
             when {
                 expression {
@@ -121,16 +101,15 @@ pipeline {
             }
 
             steps {
-                sh '''
-                    echo "Applying Terraform infrastructure..."
-                    terraform apply tfplan
-                '''
+                dir('eks-install') {
+                    sh '''
+                        echo "=== Terraform Apply ==="
+                        terraform apply tfplan
+                    '''
+                }
             }
         }
 
-        // --------------------------------------------------
-        // 9. Terraform Destroy Plan
-        // --------------------------------------------------
         stage('Terraform Destroy Plan') {
             when {
                 expression {
@@ -139,17 +118,16 @@ pipeline {
             }
 
             steps {
-                sh '''
-                    echo "Creating Terraform destroy plan..."
-                    terraform plan -destroy -out=tfdestroyplan
-                '''
+                dir('eks-install') {
+                    sh '''
+                        echo "=== Terraform Destroy Plan ==="
+                        terraform plan -destroy -out=tfdestroyplan
+                    '''
+                }
             }
         }
 
-        // --------------------------------------------------
-        // 10. VERY IMPORTANT Destroy Approval
-        // --------------------------------------------------
-        stage('Approve Terraform Destroy') {
+        stage('Approve Destroy') {
             when {
                 expression {
                     params.ACTION == 'DESTROY'
@@ -158,15 +136,12 @@ pipeline {
 
             steps {
                 input(
-                    message: 'WARNING: This will DESTROY the Terraform infrastructure. Continue?',
+                    message: 'WARNING: This will DESTROY the infrastructure. Continue?',
                     ok: 'YES - DESTROY'
                 )
             }
         }
 
-        // --------------------------------------------------
-        // 11. Terraform Destroy
-        // --------------------------------------------------
         stage('Terraform Destroy') {
             when {
                 expression {
@@ -175,10 +150,12 @@ pipeline {
             }
 
             steps {
-                sh '''
-                    echo "Destroying Terraform infrastructure..."
-                    terraform apply tfdestroyplan
-                '''
+                dir('eks-install') {
+                    sh '''
+                        echo "=== Terraform Destroy ==="
+                        terraform apply tfdestroyplan
+                    '''
+                }
             }
         }
     }
@@ -186,26 +163,26 @@ pipeline {
     post {
 
         success {
-            echo 'Terraform Jenkins pipeline completed successfully.'
+            echo 'Terraform pipeline completed successfully.'
         }
 
         failure {
-            echo 'Terraform Jenkins pipeline failed.'
+            echo 'Terraform pipeline failed.'
         }
 
         aborted {
-            echo 'Terraform Jenkins pipeline was aborted.'
+            echo 'Terraform pipeline was aborted.'
         }
 
         always {
             archiveArtifacts(
-                artifacts: 'tfplan,tfdestroyplan',
+                artifacts: 'eks-install/tfplan,eks-install/tfdestroyplan',
                 allowEmptyArchive: true
             )
 
             sh '''
-                rm -f tfplan
-                rm -f tfdestroyplan
+                rm -f eks-install/tfplan
+                rm -f eks-install/tfdestroyplan
             '''
         }
     }
