@@ -1,36 +1,212 @@
 pipeline {
+
     agent any
+
+    parameters {
+        choice(
+            name: 'ACTION',
+            choices: ['APPLY', 'DESTROY'],
+            description: 'Choose whether to apply or destroy the Terraform infrastructure'
+        )
+    }
+
+    environment {
+        TF_IN_AUTOMATION = 'true'
+        CHECKOV = '/opt/checkov/venv/bin/checkov'
+    }
 
     stages {
 
+        // --------------------------------------------------
+        // 1. Checkout Terraform Code
+        // --------------------------------------------------
         stage('Checkout') {
             steps {
                 checkout scm
             }
         }
 
+        // --------------------------------------------------
+        // 2. Terraform Format Check
+        // --------------------------------------------------
+        stage('Terraform Format Check') {
+            steps {
+                sh '''
+                    echo "Checking Terraform formatting..."
+                    terraform fmt -check -recursive
+                '''
+            }
+        }
+
+        // --------------------------------------------------
+        // 3. Checkov Security Scan
+        // --------------------------------------------------
+        stage('Checkov Security Scan') {
+            steps {
+                sh '''
+                    echo "Running Checkov security scan..."
+                    ${CHECKOV} -d . --framework terraform
+                '''
+            }
+        }
+
+        // --------------------------------------------------
+        // 4. Terraform Init
+        // --------------------------------------------------
         stage('Terraform Init') {
             steps {
-                sh 'terraform init'
+                sh '''
+                    echo "Initializing Terraform..."
+                    terraform init
+                '''
             }
         }
 
+        // --------------------------------------------------
+        // 5. Terraform Validate
+        // --------------------------------------------------
         stage('Terraform Validate') {
             steps {
-                sh 'terraform validate'
+                sh '''
+                    echo "Validating Terraform configuration..."
+                    terraform validate
+                '''
             }
         }
 
+        // --------------------------------------------------
+        // 6. Terraform Plan
+        // --------------------------------------------------
         stage('Terraform Plan') {
+            when {
+                expression {
+                    params.ACTION == 'APPLY'
+                }
+            }
+
             steps {
-                sh 'terraform plan -out=tfplan'
+                sh '''
+                    echo "Creating Terraform plan..."
+                    terraform plan -out=tfplan
+                '''
             }
         }
 
-        stage('Terraform Apply') {
-            steps {
-                sh 'terraform apply -auto-approve tfplan'
+        // --------------------------------------------------
+        // 7. Approval Before Apply
+        // --------------------------------------------------
+        stage('Approve Terraform Apply') {
+            when {
+                expression {
+                    params.ACTION == 'APPLY'
+                }
             }
+
+            steps {
+                input(
+                    message: 'Terraform plan is ready. Do you want to APPLY the changes?',
+                    ok: 'Approve Apply'
+                )
+            }
+        }
+
+        // --------------------------------------------------
+        // 8. Terraform Apply
+        // --------------------------------------------------
+        stage('Terraform Apply') {
+            when {
+                expression {
+                    params.ACTION == 'APPLY'
+                }
+            }
+
+            steps {
+                sh '''
+                    echo "Applying Terraform infrastructure..."
+                    terraform apply tfplan
+                '''
+            }
+        }
+
+        // --------------------------------------------------
+        // 9. Terraform Destroy Plan
+        // --------------------------------------------------
+        stage('Terraform Destroy Plan') {
+            when {
+                expression {
+                    params.ACTION == 'DESTROY'
+                }
+            }
+
+            steps {
+                sh '''
+                    echo "Creating Terraform destroy plan..."
+                    terraform plan -destroy -out=tfdestroyplan
+                '''
+            }
+        }
+
+        // --------------------------------------------------
+        // 10. VERY IMPORTANT Destroy Approval
+        // --------------------------------------------------
+        stage('Approve Terraform Destroy') {
+            when {
+                expression {
+                    params.ACTION == 'DESTROY'
+                }
+            }
+
+            steps {
+                input(
+                    message: 'WARNING: This will DESTROY the Terraform infrastructure. Continue?',
+                    ok: 'YES - DESTROY'
+                )
+            }
+        }
+
+        // --------------------------------------------------
+        // 11. Terraform Destroy
+        // --------------------------------------------------
+        stage('Terraform Destroy') {
+            when {
+                expression {
+                    params.ACTION == 'DESTROY'
+                }
+            }
+
+            steps {
+                sh '''
+                    echo "Destroying Terraform infrastructure..."
+                    terraform apply tfdestroyplan
+                '''
+            }
+        }
+    }
+
+    post {
+
+        success {
+            echo 'Terraform Jenkins pipeline completed successfully.'
+        }
+
+        failure {
+            echo 'Terraform Jenkins pipeline failed.'
+        }
+
+        aborted {
+            echo 'Terraform Jenkins pipeline was aborted.'
+        }
+
+        always {
+            archiveArtifacts(
+                artifacts: 'tfplan,tfdestroyplan',
+                allowEmptyArchive: true
+            )
+
+            sh '''
+                rm -f tfplan
+                rm -f tfdestroyplan
+            '''
         }
     }
 }
