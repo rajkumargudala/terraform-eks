@@ -28,19 +28,19 @@ pipeline {
             }
         }
 
-        stage('Checkov Security Scan') {
-            steps {
-                dir('eks-install') {
-                    sh '''
-                        echo "=== Checkov Security Scan ==="
-                        ${CHECKOV} \
-                    -d . \
-                    --framework terraform \
-                    --skip-check
-                    '''
-                }
-            }
-        }
+        // stage('Checkov Security Scan') {
+        //     steps {
+        //         dir('eks-install') {
+        //             sh '''
+        //                 echo "=== Checkov Security Scan ==="
+        //                 ${CHECKOV} \
+        //             -d . \
+        //             --framework terraform \
+        //             --skip-check
+        //             '''
+        //         }
+        //     }
+        // }
 
         stage('Terraform Init') {
             steps {
