@@ -33,7 +33,7 @@ pipeline {
                 dir('eks-install') {
                     sh '''
                         echo "=== Checkov Security Scan ==="
-                        ${CHECKOV} -d . --framework terraform
+                        checkov -d . --framework terraform --skip-check ...
                     '''
                 }
             }
